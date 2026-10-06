@@ -77,7 +77,7 @@ npm run build
 powershell -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
 ```
 
-הסקריפט מייצא רק תעודת NetFree קיימת ומהימנה, ומפסיק אם אין התאמה יחידה. ברשת אחרת, או אם לא נמצאה תעודה, קבלי ממנהל הרשת תעודת CA ציבורית והעבירי נתיב:
+הסקריפט מאגד את כל תעודות השורש של NetFree שכבר מהימנות במחשב, ומפסיק אם לא נמצאה אף תעודה. ברשת אחרת, או אם לא נמצאה תעודה, קבלי ממנהל הרשת תעודת CA ציבורית והעבירי נתיב:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -CertificatePath "C:\certs\network-ca.crt"
