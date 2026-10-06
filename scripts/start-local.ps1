@@ -16,10 +16,13 @@ if ($CertificatePath) {
         [IO.File]::WriteAllText($destination, $pem, [Text.Encoding]::ASCII)
     }
 } else {
-    # Export only an already trusted NetFree root, never the entire root store.
-    $certs = @(Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root | Where-Object { $_.Subject -match 'NetFree' } | Sort-Object Thumbprint -Unique)
-    if ($certs.Count -ne 1) { throw 'A single trusted NetFree root was not found. Run with -CertificatePath pointing to the CA certificate supplied by your network administrator.' }
-    $pem = "-----BEGIN CERTIFICATE-----`n" + [Convert]::ToBase64String($certs[0].RawData, [Base64FormattingOptions]::InsertLineBreaks) + "`n-----END CERTIFICATE-----`n"
+    # Export only already trusted NetFree roots, never the entire root store.
+    $certs = @(Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root | Where-Object { ($_.Subject -match 'NetFree' -or $_.Issuer -match 'NetFree') } | Sort-Object Thumbprint -Unique)
+    if ($certs.Count -eq 0) { throw 'No trusted NetFree root was found. Run with -CertificatePath pointing to the CA certificate supplied by your network administrator.' }
+    $pem = ($certs | ForEach-Object {
+        "-----BEGIN CERTIFICATE-----`n" + [Convert]::ToBase64String($_.RawData, [Base64FormattingOptions]::InsertLineBreaks) + "`n-----END CERTIFICATE-----`n"
+    }) -join "`n"
+    Write-Host ("Using {0} trusted NetFree root certificates." -f $certs.Count)
     [IO.File]::WriteAllText($destination, $pem, [Text.Encoding]::ASCII)
 }
 $env:LOCAL_CA_FILE = $destination
