@@ -66,3 +66,27 @@ npm run build
 אין להשתמש במידע אמיתי של תלמידות לפני השלמת דרישות אלו, בדיקת פריסה מאובטחת ואישור מדיניות המוסד. הצפנת שדות אינה תחליף להצפנת דיסקים וגיבויים.
 
 [האפיון המלא](docs/specification.he.md)
+
+## שגיאת SSL בעת בנייה ברשת מסוננת
+
+`CERTIFICATE_VERIFY_FAILED` בזמן pip או npm עשוי להצביע על תעודת CA של סינון רשת או proxy שהמחשב מכיר אך Docker אינו מכיר. השגיאה "No matching distribution" במצב זה אינה ראיה שחסרה גרסת החבילה.
+
+ב־Windows, ברשת NetFree שכבר מותקנת בה תעודת שורש מהימנה, הריצי מתוך תיקיית הפרויקט:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
+```
+
+הסקריפט מייצא רק תעודת NetFree קיימת ומהימנה, ומפסיק אם אין התאמה יחידה. ברשת אחרת, או אם לא נמצאה תעודה, קבלי ממנהל הרשת תעודת CA ציבורית והעבירי נתיב:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -CertificatePath "C:\certs\network-ca.crt"
+```
+
+אין ביטול של אימות SSL. התעודה מועברת בתור BuildKit secret, משמשת רק בהתקנת התלויות, אינה נשמרת בתמונה ואינה עולה לגיט. קובץ compose.local-ca.yml הוא אפשרות לפיתוח מקומי בלבד; בנייה רגילה אינה משתמשת בתעודה. תעודה לא תקינה או חסרה אינה נעקפת.
+
+לאחר עליית השירותים אפשר ליצור משתמשת:
+
+```powershell
+docker compose exec counselor-server python -m app.create_user
+```

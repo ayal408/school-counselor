@@ -1,0 +1,14 @@
+# Local development only. Use together with docker-compose.yml.
+services:
+  auth-server:
+    build:
+      secrets: [local_ca]
+  counselor-server:
+    build:
+      secrets: [local_ca]
+  nginx-gateway:
+    build:
+      secrets: [local_ca]
+secrets:
+  local_ca:
+    file: ${LOCAL_CA_FILE:-./.local/local-ca.pem}

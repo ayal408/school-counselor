@@ -1,7 +1,11 @@
+# syntax=docker/dockerfile:1
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY counselor-client/package*.json ./
-RUN npm ci
+RUN --mount=type=secret,id=local_ca \
+    if [ -s /run/secrets/local_ca ]; then \
+      NODE_EXTRA_CA_CERTS=/run/secrets/local_ca npm ci; \
+    else npm ci; fi
 COPY counselor-client/ ./
 RUN npm run build
 FROM nginx:1.27-alpine
