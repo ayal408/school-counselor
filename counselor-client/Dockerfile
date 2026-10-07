@@ -2,6 +2,7 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY counselor-client/package*.json ./
+COPY counselor-client/scripts/ ./scripts/
 RUN --mount=type=secret,id=local_ca \
     if [ -s /run/secrets/local_ca ]; then \
       NODE_EXTRA_CA_CERTS=/run/secrets/local_ca npm ci; \
