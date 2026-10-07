@@ -29,6 +29,9 @@ class Meeting(Base):
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     notes: Mapped[str] = mapped_column(Text)
     summary: Mapped[str] = mapped_column(Text)
+    ai_assisted: Mapped[bool] = mapped_column(Boolean, default=False)
+    consent_recorded: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 class RefreshSession(Base):
     __tablename__ = "refresh_sessions"

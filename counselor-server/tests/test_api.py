@@ -92,3 +92,38 @@ def test_planning_privacy_conflicts_tasks(setup):
     with f() as db: assert 'רגיש' not in db.get(Task,t['id']).title
     assert c.post("/api/tasks",headers=h,json={**body,"title":"  "}).status_code==422
     assert c.post("/api/appointments",headers=h,json={**appointment,"ends_at":appointment['starts_at']}).status_code==422
+
+def test_ai_consent_authorization_and_review(setup, monkeypatch):
+    c,f=setup;h=token("one");other=token("two")
+    sid=c.post("/api/students",headers=h,json={"name":"בדיקה","classroom":"ח"}).json()["id"]
+    from app import ai
+    calls=[]
+    async def fake(path, **kwargs):
+        calls.append((path,kwargs))
+        return {"text":"תמלול בדיקה"} if path=='audio/transcriptions' else {"choices":[{"message":{"content":"טיוטת סיכום"}}]}
+    monkeypatch.setattr(ai,'provider',fake)
+    monkeypatch.setenv('AI_ENABLED','false')
+    assert c.get('/api/ai/status',headers=h).json()['enabled'] is False
+    assert c.post(f'/api/ai/students/{sid}/summarize',headers=h,json={"transcript":"בדיקה","consent":True}).status_code==503
+    monkeypatch.setenv('AI_ENABLED','true');monkeypatch.setenv('OPENAI_API_KEY','test-not-a-real-key')
+    assert c.post(f'/api/ai/students/{sid}/summarize',headers=other,json={"transcript":"בדיקה","consent":True}).status_code==404
+    assert c.post(f'/api/ai/students/{sid}/summarize',headers=h,json={"transcript":"בדיקה"}).status_code==422
+    assert calls==[]
+    audio_headers={**h,'Content-Type':'audio/webm','X-Recording-Consent':'true'}
+    assert c.post(f'/api/ai/students/{sid}/transcribe',headers=audio_headers,content=b'invalid').status_code==415
+    result=c.post(f'/api/ai/students/{sid}/transcribe',headers=audio_headers,content=b'\x1a\x45\xdf\xa3fake-test-audio')
+    assert result.json()['transcript']=='תמלול בדיקה'
+    result=c.post(f'/api/ai/students/{sid}/summarize',headers=h,json={"transcript":"תמלול בדיקה","consent":True})
+    assert result.json()['draft'] is True
+    assert calls[-1][1]['json']['store'] is False
+    body={"starts_at":"2026-10-07T09:00:00+03:00","notes":"תמלול בדיקה","summary":"טיוטת סיכום","ai_assisted":True,"consent_recorded":True}
+    assert c.post(f'/api/students/{sid}/meetings',headers=h,json=body).status_code==422
+    saved=c.post(f'/api/students/{sid}/meetings',headers=h,json={**body,'ai_reviewed':True})
+    assert saved.status_code==201
+    from app.models import Meeting
+    with f() as db:
+        row=db.get(Meeting,saved.json()['id'])
+        assert row.ai_assisted and row.ai_reviewed and row.consent_recorded
+        assert 'תמלול' not in row.notes
+    monkeypatch.setattr(ai,'MAX_AUDIO',2)
+    assert c.post(f'/api/ai/students/{sid}/transcribe',headers=audio_headers,content=b'long').status_code==413

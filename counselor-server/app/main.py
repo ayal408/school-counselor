@@ -30,7 +30,7 @@ def owned(db, user, sid):
 def student_json(s):
     return {"id": s.id, "name": decrypt(s.name), "classroom": decrypt(s.classroom), "referral": decrypt(s.referral), "archived": s.archived}
 def meeting_json(m):
-    return {"id": m.id, "student_id": m.student_id, "starts_at": m.starts_at, "notes": decrypt(m.notes), "summary": decrypt(m.summary)}
+    return {"id": m.id, "student_id": m.student_id, "starts_at": m.starts_at, "notes": decrypt(m.notes), "summary": decrypt(m.summary), "ai_assisted": m.ai_assisted, "ai_reviewed": m.ai_reviewed}
 @app.get("/healthz/live")
 def live(): return {"status": "ok"}
 @app.get("/healthz/ready")
@@ -66,11 +66,8 @@ def meetings(sid: str, user: User = Depends(current_user), db: Session = Depends
 def add_meeting(sid: str, body: MeetingInput, user: User = Depends(current_user), db: Session = Depends(get_db)):
     s = owned(db, user, sid)
     if s.archived: raise HTTPException(409, "הכרטיס בארכיון")
-    m = Meeting(student_id=sid, starts_at=body.starts_at, notes=encrypt(body.notes), summary=encrypt(body.summary))
+    m = Meeting(student_id=sid, starts_at=body.starts_at, notes=encrypt(body.notes), summary=encrypt(body.summary), ai_assisted=body.ai_assisted, consent_recorded=body.consent_recorded, ai_reviewed=body.ai_reviewed)
     db.add(m); db.flush(); audit(db, user, "meeting.create", m.id); db.commit(); return meeting_json(m)
-@app.get("/api/ai/status")
-def ai_status(user: User = Depends(current_user)):
-    return {"enabled": False, "message": "תמלול וסיכומי AI טרם חוברו. ניתן לתעד פגישות ידנית."}
 @app.post("/internal/verify-password", dependencies=[Depends(internal)])
 def verify(body: LoginInput, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == body.email.strip().lower(), User.active.is_(True)))
@@ -98,3 +95,14 @@ def revoke(body: SessionInput, db: Session = Depends(get_db)):
 
 from .planning import router as planning_router
 app.include_router(planning_router)
+
+from .ai import router as ai_router
+app.include_router(ai_router)
+
+@app.middleware("http")
+async def limit_ai_memory(request, call_next):
+    if request.url.path.startswith("/api/ai/students/"):
+        from .ai import processing_slots
+        async with processing_slots:
+            return await call_next(request)
+    return await call_next(request)

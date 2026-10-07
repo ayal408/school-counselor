@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 class StudentInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     classroom: str = Field(min_length=1, max_length=40)
@@ -13,6 +13,14 @@ class MeetingInput(BaseModel):
     starts_at: datetime
     notes: str = Field(default="", max_length=20000)
     summary: str = Field(default="", max_length=10000)
+    ai_assisted: bool = False
+    consent_recorded: bool = False
+    ai_reviewed: bool = False
+    @model_validator(mode="after")
+    def require_ai_review(self):
+        if self.ai_assisted and not (self.consent_recorded and self.ai_reviewed):
+            raise ValueError("נדרשים הסכמה ואישור טיוטת AI")
+        return self
     @field_validator("starts_at")
     @classmethod
     def timezone_required(cls, v):
