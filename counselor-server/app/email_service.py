@@ -13,6 +13,64 @@ from .ai import tls_context
 class MailFailure(Exception):
     def __init__(self,code,uncertain=False,retry=False):self.code=code;self.uncertain=uncertain;self.retry=retry
 
+FAILURE_MESSAGES={
+    'EMAIL_SEND_FAILED':'Google דחה את השליחה. שלחי מייל בדיקה חדש לאחר העדכון כדי לקבל סיבה מפורטת.',
+    'GMAIL_API_DISABLED':'Gmail API אינו מופעל או לא זמין לפרויקט Google. הפעילי אותו בפרויקט של לקוח OAuth.',
+    'GMAIL_PERMISSION_MISSING':'חסרה הרשאת שליחת מייל. חברי מחדש את חשבון Gmail ואשרי את הרשאת השליחה.',
+    'GMAIL_DOMAIN_POLICY':'מדיניות Google Workspace חוסמת גישה ל־Gmail API. נדרשת בדיקה עם מנהלת הדומיין.',
+    'GMAIL_DAILY_LIMIT':'הושגה מכסת השימוש היומית של Google. בדקי את המכסה והמתיני לחידושה.',
+    'GMAIL_RECONNECT_REQUIRED':'הרשאת Google אינה תקפה. חברי מחדש את חשבון המערכת.',
+    'GMAIL_OAUTH_CLIENT_INVALID':'Google דחה את לקוח OAuth. בדקי את מזהה הלקוח והסוד בשרת.',
+    'GMAIL_ACCOUNT_NOT_READY':'Google החזיר שגיאת תנאי מקדים. בדקי שתיבת Gmail בחשבון המחובר פעילה ונגישה.',
+    'GMAIL_REQUEST_REJECTED':'Google דחה את מבנה הבקשה או פרטי ההודעה. בדקי את כתובת הנמען ושלחי מייל בדיקה חדש.',
+    'RATE_LIMITED':'Google הגביל את קצב השליחה. המערכת תנסה שוב בהתאם למגבלת הניסיונות.',
+    'TOKEN_REFRESH_FAILED':'לא ניתן לחדש את הרשאת Google. בדקי את החיבור והגדרות לקוח OAuth.',
+    'CONNECTION_FAILED':'לא ניתן להתחבר ל־Google. בדקי חיבור רשת ותעודת הסינון של שירות email-worker.',
+    'EMAIL_NOT_CONNECTED':'מייל המערכת אינו מחובר. חברי חשבון Gmail במסך הניהול.',
+    'DELIVERY_UNKNOWN':'תוצאת השליחה אינה ודאית. בדקי בתיבת השולח לפני שליחה נוספת.',
+    'EXPIRED':'תוקף ההודעה פג לפני השליחה. יש לבקש הודעה חדשה.',
+    'INVALID_ADDRESS':'כתובת השולח, הנמען או המענה אינה תקינה.',
+    'INVALID_HEADER':'כותרת המייל או שם השולח אינם תקינים.',
+}
+def failure_message(code):
+    if code in FAILURE_MESSAGES:return FAILURE_MESSAGES[code]
+    if isinstance(code,str) and re.fullmatch(r'GMAIL_HTTP_[0-9]{3}',code):
+        return 'Google או שרת ביניים דחו את השליחה (HTTP '+code[-3:]+'). בדקי הרשאות, הפעלת Gmail API וסינון רשת.'
+    return 'השליחה נכשלה. יש לבדוק את חיבור מייל המערכת.'
+
+def google_failure(response,token_refresh=False):
+    # Only allow-listed classifications are persisted; never store Google's free text.
+    try:
+        payload=response.json()
+        error=payload.get('error') if isinstance(payload,dict) else None
+    except ValueError:error=None
+    if token_refresh:
+        if error=='invalid_grant':return MailFailure('GMAIL_RECONNECT_REQUIRED')
+        if error in ['invalid_client','unauthorized_client']:return MailFailure('GMAIL_OAUTH_CLIENT_INVALID')
+        return MailFailure('TOKEN_REFRESH_FAILED',retry=response.status_code==429 or response.status_code>=500)
+    if response.status_code==429:return MailFailure('RATE_LIMITED',retry=True)
+    if response.status_code>=500:return MailFailure('DELIVERY_UNKNOWN',uncertain=True)
+    reasons=set()
+    if isinstance(error,dict):
+        for group in ['errors','details']:
+            items=error.get(group,[])
+            if isinstance(items,list):
+                for item in items[:20]:
+                    if isinstance(item,dict) and isinstance(item.get('reason'),str):reasons.add(item['reason'])
+        message=error.get('message','')
+        if isinstance(message,str) and ('has not been used in project' in message or 'API has been disabled' in message):reasons.add('SERVICE_DISABLED')
+        status=error.get('status')
+        if isinstance(status,str):reasons.add(status)
+    if reasons.intersection({'SERVICE_DISABLED','accessNotConfigured','API_DISABLED'}):return MailFailure('GMAIL_API_DISABLED')
+    if reasons.intersection({'ACCESS_TOKEN_SCOPE_INSUFFICIENT','insufficientPermissions'}):return MailFailure('GMAIL_PERMISSION_MISSING')
+    if 'domainPolicy' in reasons:return MailFailure('GMAIL_DOMAIN_POLICY')
+    if 'dailyLimitExceeded' in reasons:return MailFailure('GMAIL_DAILY_LIMIT')
+    if reasons.intersection({'rateLimitExceeded','userRateLimitExceeded'}):return MailFailure('RATE_LIMITED',retry=True)
+    if response.status_code==401:return MailFailure('GMAIL_RECONNECT_REQUIRED')
+    if reasons.intersection({'failedPrecondition','FAILED_PRECONDITION'}):return MailFailure('GMAIL_ACCOUNT_NOT_READY')
+    if response.status_code==400:return MailFailure('GMAIL_REQUEST_REJECTED')
+    return MailFailure('GMAIL_HTTP_'+str(response.status_code))
+
 def environment(name):
     aliases={'GMAIL_CLIENT_ID':'GMAIL__CLIENTID','GMAIL_CLIENT_SECRET':'GMAIL__CLIENTSECRET','GMAIL_REFRESH_TOKEN':'GMAIL__REFRESHTOKEN','GMAIL_EMAIL':'GMAIL__EMAIL'}
     return os.environ.get(name,os.environ.get(aliases.get(name,''),''))
@@ -69,16 +127,14 @@ async def send(db,recipient,payload):
     try:
         async with httpx.AsyncClient(timeout=20,verify=tls_context()) as client:
             result=await client.post('https://oauth2.googleapis.com/token',data={'client_id':environment('GMAIL_CLIENT_ID'),'client_secret':environment('GMAIL_CLIENT_SECRET'),'refresh_token':refresh,'grant_type':'refresh_token'})
-            if result.status_code!=200:raise MailFailure('TOKEN_REFRESH_FAILED',retry=result.status_code==429 or result.status_code>=500)
+            if result.status_code!=200:raise google_failure(result,token_refresh=True)
             access=result.json().get('access_token')
             if not isinstance(access,str) or not access:raise MailFailure('TOKEN_REFRESH_FAILED')
             raw=message(recipient,row,payload)
             try:
                 result=await client.post('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',headers={'Authorization':'Bearer '+access},json={'raw':raw})
             except httpx.HTTPError:raise MailFailure('DELIVERY_UNKNOWN',uncertain=True)
-            if result.status_code==429:raise MailFailure('RATE_LIMITED',retry=True)
-            if result.status_code>=500:raise MailFailure('DELIVERY_UNKNOWN',uncertain=True)
-            if result.status_code not in [200,201]:raise MailFailure('EMAIL_SEND_FAILED')
+            if result.status_code not in [200,201]:raise google_failure(result)
     except (httpx.HTTPError,ValueError,OSError,TypeError):raise MailFailure('CONNECTION_FAILED',retry=True)
 
 async def process_one(factory):

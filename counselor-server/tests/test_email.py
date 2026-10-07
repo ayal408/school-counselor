@@ -172,3 +172,25 @@ def test_stale_oauth_completion_cannot_replace_a_new_configuration(setup,monkeyp
     result=c.get('/api/email/gmail/callback',params={'state':state,'code':'code'},follow_redirects=False)
     assert result.headers['location'].endswith('gmail=failed')
     with f() as db:assert db.get(EmailSettings,1).enabled is False and db.get(EmailSettings,1).sender_email=='system@example.test'
+
+def test_google_failure_classification_does_not_leak_provider_text():
+    cases=[(403,{'details':[{'reason':'SERVICE_DISABLED'}]},'GMAIL_API_DISABLED'),(403,{'errors':[{'reason':'insufficientPermissions'}]},'GMAIL_PERMISSION_MISSING'),(403,{'errors':[{'reason':'domainPolicy'}]},'GMAIL_DOMAIN_POLICY'),(403,{'errors':[{'reason':'userRateLimitExceeded'}]},'RATE_LIMITED'),(400,{'status':'FAILED_PRECONDITION'},'GMAIL_ACCOUNT_NOT_READY'),(401,{},'GMAIL_RECONNECT_REQUIRED'),(500,{},'DELIVERY_UNKNOWN')]
+    for status,error,expected in cases:
+        error['message']='private-token-and-private-message'
+        failure=email_service.google_failure(httpx.Response(status,json={'error':error}))
+        assert failure.code==expected
+        assert 'private-' not in email_service.failure_message(failure.code)
+    assert email_service.google_failure(httpx.Response(403,text='<html>private proxy error</html>')).code=='GMAIL_HTTP_403'
+    assert email_service.google_failure(httpx.Response(400,json={'error':'invalid_grant'}),token_refresh=True).code=='GMAIL_RECONNECT_REQUIRED'
+
+def test_rejected_send_history_has_safe_actionable_reason(setup,monkeypatch):
+    google_env(monkeypatch);c,f=setup;sender(f);make_admin(f);h=token('one')
+    c.post('/api/email/send-test',headers=h,json=proof(recipient='owned@example.test'))
+    def handler(request):
+        if request.url.host=='oauth2.googleapis.com':return httpx.Response(200,json={'access_token':'private-access'})
+        return httpx.Response(403,json={'error':{'message':'private-token','details':[{'reason':'SERVICE_DISABLED'}]}})
+    fake_network(monkeypatch,handler)
+    asyncio.run(email_service.process_one(f))
+    info=c.get('/api/email/history',headers=h).json()[0]
+    assert info['failure_code']=='GMAIL_API_DISABLED' and 'Gmail API' in info['failure_message']
+    assert 'private-token' not in json.dumps(info)

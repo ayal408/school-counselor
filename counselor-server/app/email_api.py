@@ -11,7 +11,7 @@ from .database import get_db
 from .models import User, EmailSettings, EmailConsent, EmailOutbox, Audit
 from .security import current_user, admin_user, encrypt, decrypt
 from .management import Proof, prove
-from .email_service import settings,configuration_json,oauth_available,environment,redirect_uri,origin,mailbox,enqueue,connected
+from .email_service import settings,configuration_json,oauth_available,environment,redirect_uri,origin,mailbox,enqueue,connected,failure_message
 from .ai import tls_context
 router=APIRouter(prefix='/api/email')
 SCOPE='https://www.googleapis.com/auth/gmail.send'
@@ -107,4 +107,4 @@ def test(body:TestInput,user:User=Depends(admin_user),db:Session=Depends(get_db)
 @router.get('/history')
 def history(user:User=Depends(admin_user),db:Session=Depends(get_db)):
     rows=db.scalars(select(EmailOutbox).order_by(EmailOutbox.created_at.desc()).limit(50)).all()
-    return [{'id':r.id,'recipient':r.recipient,'kind':r.kind,'status':r.status,'attempts':r.attempts,'failure_code':r.failure_code,'created_at':r.created_at,'sent_at':r.sent_at} for r in rows]
+    return [{'id':r.id,'recipient':r.recipient,'kind':r.kind,'status':r.status,'attempts':r.attempts,'failure_code':r.failure_code,'failure_message':failure_message(r.failure_code) if r.failure_code else None,'created_at':r.created_at,'sent_at':r.sent_at} for r in rows]
