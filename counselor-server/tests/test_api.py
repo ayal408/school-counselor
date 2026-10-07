@@ -127,3 +127,48 @@ def test_ai_consent_authorization_and_review(setup, monkeypatch):
         assert 'תמלול' not in row.notes
     monkeypatch.setattr(ai,'MAX_AUDIO',2)
     assert c.post(f'/api/ai/students/{sid}/transcribe',headers=audio_headers,content=b'long').status_code==413
+
+def test_multiple_providers_routing_and_secrets(setup,monkeypatch):
+    import httpx,json,base64
+    from app import ai
+    c,_=setup;h=token('one')
+    sid=c.post('/api/students',headers=h,json={'name':'בדיקה','classroom':'ח'}).json()['id']
+    for key in ['OPENAI_API_KEY','GEMINI_API_KEY','GROQ_API_KEY']:monkeypatch.delenv(key,raising=False)
+    monkeypatch.setenv('AI_ENABLED','true');monkeypatch.setenv('GEMINI_API_KEY','private-gemini-test-key');monkeypatch.setenv('GROQ_API_KEY','private-groq-test-key')
+    info=c.get('/api/ai/status',headers=h).json()
+    assert info['default_provider']=='gemini'
+    assert 'private-' not in json.dumps(info)
+    assert [p['enabled'] for p in info['providers']]==[False,True,True]
+    seen=[]
+    def handler(request):
+        seen.append(request)
+        if request.url.host=='generativelanguage.googleapis.com':
+            payload=json.loads(request.content)
+            assert request.headers['x-goog-api-key']=='private-gemini-test-key'
+            assert 'private-' not in str(request.url)
+            if 'inlineData' in payload['contents'][0]['parts'][-1]:
+                part=payload['contents'][0]['parts'][-1]['inlineData']
+                assert base64.b64decode(part['data']).startswith(b'\x1a\x45\xdf\xa3')
+            return httpx.Response(200,json={'candidates':[{'content':{'parts':[{'text':'hidden reasoning','thought':True},{'text':'תוצר בדיקה'}]}}]})
+        assert request.url.host=='api.groq.com'
+        assert request.headers['Authorization']=='Bearer private-groq-test-key'
+        if request.url.path.endswith('audio/transcriptions'):return httpx.Response(200,json={'text':'תמלול Groq'})
+        payload=json.loads(request.content)
+        assert 'store' not in payload
+        assert payload['model']=='openai/gpt-oss-120b'
+        return httpx.Response(200,json={'choices':[{'message':{'content':'סיכום Groq'}}]})
+    original=httpx.AsyncClient
+    monkeypatch.setattr(ai.httpx,'AsyncClient',lambda **kw:original(transport=httpx.MockTransport(handler)))
+    header={**h,'Content-Type':'audio/webm','X-Recording-Consent':'true','X-AI-Provider':'gemini'}
+    a=c.post(f'/api/ai/students/{sid}/transcribe',headers=header,content=b'\x1a\x45\xdf\xa3sample')
+    assert a.status_code==200 and a.json()['transcript']=='תוצר בדיקה'
+    result=c.post(f'/api/ai/students/{sid}/summarize',headers=h,json={'transcript':'בדיקה','consent':True,'provider':'groq'})
+    assert result.json()['summary']=='סיכום Groq'
+    result=c.post(f'/api/ai/students/{sid}/summarize',headers=h,json={'transcript':'בדיקה','consent':True,'provider':'gemini'})
+    assert result.json()['summary']=='תוצר בדיקה'
+    header['X-AI-Provider']='groq'
+    assert c.post(f'/api/ai/students/{sid}/transcribe',headers=header,content=b'\x1a\x45\xdf\xa3sample').json()['transcript']=='תמלול Groq'
+    before=len(seen)
+    assert c.post(f'/api/ai/students/{sid}/summarize',headers=h,json={'transcript':'בדיקה','consent':True,'provider':'untrusted'}).status_code==422
+    assert c.post(f'/api/ai/students/{sid}/summarize',headers=h,json={'transcript':'בדיקה','consent':True,'provider':'openai'}).status_code==503
+    assert len(seen)==before
