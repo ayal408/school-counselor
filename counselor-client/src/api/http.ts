@@ -19,5 +19,6 @@ export function errorMessage(error: unknown): string {
   const detail=error.response?.data?.detail
   return typeof detail==='string'?detail:'לא ניתן להשלים את הפעולה. בדקי את החיבור ונסי שוב.'
  }
+ if(error instanceof Error)return error.message
  return 'אירעה שגיאה. נסי שוב.'
 }

@@ -28,3 +28,18 @@ def test_login_cookie_and_refresh(monkeypatch):
         assert c.post("/api/auth/refresh",headers=h).status_code==200
         assert c.post("/api/auth/logout",headers=h).status_code==200
         assert calls[-1][0]=="/internal/sessions/revoke"
+
+
+def test_otp_forwarding_and_session_version(monkeypatch):
+    import jwt
+    calls=[]
+    async def fake(path,body):
+        calls.append((path,body))
+        return {'id':'one','email':'test@example.test','name':'Test','session_version':7,'role':'admin'}
+    monkeypatch.setattr(service,'data',fake)
+    with TestClient(service.app,base_url='https://testserver') as c:
+        r=c.post('/api/auth/login',headers={'Origin':service.ORIGIN,'X-Requested-With':'XMLHttpRequest'},json={'email':'test@example.test','password':'password','otp':'123456'})
+        assert r.status_code==200 and calls[0][1]['otp']=='123456'
+        assert calls[1][1]['session_version']==7
+        claims=jwt.decode(r.json()['accessToken'],service.SECRET,algorithms=['HS256'],audience='counselor-api',issuer='counselor-auth')
+        assert claims['v']==7

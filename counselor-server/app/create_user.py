@@ -27,9 +27,11 @@ def main():
     with SessionLocal() as db:
         if db.scalar(select(User).where(User.email == email)):
             raise SystemExit("User already exists")
-        db.add(User(email=email, name=name, password_hash=PasswordHasher().hash(password)))
+        role = "counselor" if db.scalar(select(User.id).where(User.role == "admin")) else "admin"
+        db.add(User(email=email, name=name, role=role, password_hash=PasswordHasher().hash(password)))
         db.commit()
     print("User created")
 
 if __name__ == "__main__":
     main()
+

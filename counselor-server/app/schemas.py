@@ -27,11 +27,13 @@ class MeetingInput(BaseModel):
         if v.tzinfo is None: raise ValueError("נדרש אזור זמן")
         return v
 class LoginInput(BaseModel):
+    otp: str = Field(default="", max_length=64)
     email: str = Field(max_length=254)
     password: str = Field(min_length=1, max_length=256)
 class SessionInput(BaseModel):
     token_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 class SessionCreate(SessionInput):
+    session_version: int = 0
     user_id: str
     expires_at: datetime
 class SessionRotate(SessionInput):

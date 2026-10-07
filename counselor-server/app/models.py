@@ -13,6 +13,16 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120))
     password_hash: Mapped[str] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    role: Mapped[str] = mapped_column(String(20), default="counselor")
+    session_version: Mapped[int] = mapped_column(Integer, default=0)
+    mfa_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mfa_pending: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mfa_pending_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mfa_last_step: Mapped[int] = mapped_column(Integer, default=-1)
+    recovery_hashes: Mapped[str] = mapped_column(Text, default="[]")
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_backup: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 class Student(Base):
     __tablename__ = "students"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -60,3 +70,21 @@ class Task(Base):
     title: Mapped[str] = mapped_column(Text)
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(20), default="open")
+
+class StudentShare(Base):
+    __tablename__ = "student_shares"
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+class AIConfig(Base):
+    __tablename__ = "ai_configs"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(20), primary_key=True)
+    key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    preferred: Mapped[bool] = mapped_column(Boolean, default=False)
+    transcription_model: Mapped[str] = mapped_column(String(120))
+    summary_model: Mapped[str] = mapped_column(String(120))
+class BackupImport(Base):
+    __tablename__ = "backup_imports"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    digest: Mapped[str] = mapped_column(String(64), primary_key=True)

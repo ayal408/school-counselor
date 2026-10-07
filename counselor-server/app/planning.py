@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .database import get_db
 from .models import User, Student, Appointment, Task, Audit
-from .security import current_user, encrypt, decrypt
+from .security import current_user, encrypt, decrypt, visible_condition
 router = APIRouter(prefix="/api")
 class AppointmentInput(BaseModel):
     student_id: str
@@ -54,7 +54,7 @@ def task_json(t):
     return {"id": t.id, "student_id": t.student_id, "title": decrypt(t.title), "due_at": t.due_at, "status": t.status}
 @router.get("/appointments")
 def appointments(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    rows = db.scalars(select(Appointment).join(Student).where(Student.owner_id == user.id).order_by(Appointment.starts_at)).all()
+    rows = db.scalars(select(Appointment).join(Student).where(visible_condition(user)).order_by(Appointment.starts_at)).all()
     audit(db,user,"appointments.list",user.id);db.commit()
     return [appointment_json(a) for a in rows]
 @router.post("/appointments", status_code=201)
@@ -77,7 +77,7 @@ def change_appointment(rid: str, body: AppointmentStatus, user: User = Depends(c
     row.status=body.status;audit(db,user,"appointment.status",rid);db.commit();return appointment_json(row)
 @router.get("/tasks")
 def tasks(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    rows=db.scalars(select(Task).join(Student).where(Student.owner_id==user.id).order_by(Task.due_at)).all()
+    rows=db.scalars(select(Task).join(Student).where(visible_condition(user)).order_by(Task.due_at)).all()
     audit(db,user,"tasks.list",user.id);db.commit();return [task_json(t) for t in rows]
 @router.post("/tasks", status_code=201)
 def create_task(body: TaskInput, user: User = Depends(current_user), db: Session = Depends(get_db)):

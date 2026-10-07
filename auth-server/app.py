@@ -14,6 +14,7 @@ SECURE = os.environ.get("COOKIE_SECURE", "true").lower() == "true"
 COOKIE = "counselor_refresh"
 app = FastAPI(title="Counselor Authentication", docs_url=None, redoc_url=None)
 class Login(BaseModel):
+    otp: str = Field(default="", max_length=64)
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=256)
 @app.exception_handler(RequestValidationError)
@@ -37,7 +38,7 @@ async def data(path, body):
     except httpx.HTTPError: raise HTTPException(503, "שירות ההתחברות אינו זמין כרגע")
 def issue(response, user, refresh):
     now = datetime.now(timezone.utc)
-    access = jwt.encode({"sub": user["id"], "iat": now, "exp": now + timedelta(minutes=10), "iss": "counselor-auth", "aud": "counselor-api"}, SECRET, algorithm="HS256")
+    access = jwt.encode({"sub": user["id"], "v": user.get("session_version", 0), "iat": now, "exp": now + timedelta(minutes=10), "iss": "counselor-auth", "aud": "counselor-api"}, SECRET, algorithm="HS256")
     response.set_cookie(COOKIE, refresh, httponly=True, secure=SECURE, samesite="strict", path="/api/auth", max_age=8*3600)
     return {"accessToken": access, "user": user}
 @app.get("/healthz/live")
@@ -47,7 +48,7 @@ async def login(body: Login, request: Request, response: Response):
     csrf(request)
     user = await data("/internal/verify-password", body.model_dump())
     refresh = secrets.token_urlsafe(48)
-    await data("/internal/sessions", {"token_hash": digest(refresh), "user_id": user["id"], "expires_at": (datetime.now(timezone.utc)+timedelta(hours=8)).isoformat()})
+    await data("/internal/sessions", {"token_hash": digest(refresh), "user_id": user["id"], "session_version": user.get("session_version", 0), "expires_at": (datetime.now(timezone.utc)+timedelta(hours=8)).isoformat()})
     return issue(response, user, refresh)
 @app.post("/api/auth/refresh")
 async def refresh(request: Request, response: Response):
@@ -64,3 +65,4 @@ async def logout(request: Request, response: Response):
     if old: await data("/internal/sessions/revoke", {"token_hash": digest(old)})
     response.delete_cookie(COOKIE, path="/api/auth", secure=SECURE, httponly=True, samesite="strict")
     return {"ok": True}
+

@@ -5,9 +5,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 import httpx
 from .database import get_db
-from .models import Student, User, Audit
-from .security import current_user
-router=APIRouter(prefix="/api/ai")
+from .models import Student, User, Audit, AIConfig
+from .security import current_user, decrypt
+from contextvars import ContextVar
+ai_runtime=ContextVar("ai_runtime",default={})
+async def load_runtime(user:User=Depends(current_user),db:Session=Depends(get_db)):
+    rows=db.scalars(select(AIConfig).where(AIConfig.user_id==user.id)).all()
+    token=ai_runtime.set({r.provider:{"key":decrypt(r.key) if r.key else "","enabled":r.enabled,"preferred":r.preferred,"transcription":r.transcription_model,"summary":r.summary_model} for r in rows})
+    try:yield
+    finally:ai_runtime.reset(token)
+router=APIRouter(prefix="/api/ai",dependencies=[Depends(load_runtime)])
 MAX_AUDIO=20*1024*1024
 processing_slots=asyncio.Semaphore(2)
 FORMATS={"audio/webm":("webm",b"\x1a\x45\xdf\xa3"),"audio/mp4":("mp4",None),"audio/wav":("wav",b"RIFF"),"audio/mpeg":("mp3",None)}
@@ -17,9 +24,12 @@ PROVIDERS={
     "gemini":{"name":"Google Gemini","key":"GEMINI_API_KEY","transcription_env":"GEMINI_MODEL","transcription":"gemini-3.8-flash","summary_env":"GEMINI_MODEL","summary":"gemini-3.8-flash","max_audio_mb":8},
     "groq":{"name":"Groq","key":"GROQ_API_KEY","transcription_env":"GROQ_TRANSCRIPTION_MODEL","transcription":"whisper-large-v3","summary_env":"GROQ_SUMMARY_MODEL","summary":"openai/gpt-oss-120b","max_audio_mb":20},
 }
-def enabled(name): return os.environ.get("AI_ENABLED","false").lower()=="true" and bool(os.environ.get(PROVIDERS[name]["key"],"").strip())
+def enabled(name):
+    row=ai_runtime.get().get(name)
+    if row is not None:return row['enabled'] and bool(row['key'])
+    return os.environ.get("AI_ENABLED","false").lower()=="true" and bool(os.environ.get(PROVIDERS[name]["key"],"").strip())
 def default_provider():
-    preferred=os.environ.get("AI_PROVIDER","openai")
+    preferred=next((name for name,r in ai_runtime.get().items() if r["preferred"]),os.environ.get("AI_PROVIDER","openai"))
     if preferred in PROVIDERS and enabled(preferred): return preferred
     return next((name for name in PROVIDERS if enabled(name)),"openai")
 def selected_provider(name):
@@ -27,7 +37,7 @@ def selected_provider(name):
     if name not in PROVIDERS: raise HTTPException(422,"ספק AI לא נתמך")
     return name
 def model(name,kind):
-    cfg=PROVIDERS[name];value=os.environ.get(cfg[kind+"_env"],cfg[kind])
+    cfg=PROVIDERS[name];row=ai_runtime.get().get(name);value=row[kind] if row else os.environ.get(cfg[kind+"_env"],cfg[kind])
     pattern=r"[A-Za-z0-9_.-]+" if name=="gemini" else r"[A-Za-z0-9_./-]+"
     if not re.fullmatch(pattern,value): raise HTTPException(503,"שם מודל ה־AI אינו תקין")
     return value
@@ -45,7 +55,8 @@ def tls_context():
 async def provider(path, provider_name="openai", **kwargs):
     try:
         async with httpx.AsyncClient(timeout=150,verify=tls_context()) as client:
-            key=os.environ[PROVIDERS[provider_name]["key"]]
+            row=ai_runtime.get().get(provider_name)
+            key=row["key"] if row else os.environ[PROVIDERS[provider_name]["key"]]
             if provider_name=="gemini":
                 if path=="audio/transcriptions":
                     _,audio,mime=kwargs["files"]["file"]
