@@ -70,3 +70,25 @@ def test_password_verification(setup):
     c,_=setup;h={"X-Internal-Key":os.environ["INTERNAL_SERVICE_KEY"]}
     assert c.post("/internal/verify-password",headers=h,json={"email":"one@example.test","password":"wrong"}).status_code==401
     assert c.post("/internal/verify-password",headers=h,json={"email":"one@example.test","password":"long-test-password"}).json()["id"]=="one"
+
+def test_planning_privacy_conflicts_tasks(setup):
+    c,f=setup;h=token("one");other=token("two")
+    sid=c.post("/api/students",headers=h,json={"name":"בדיקה","classroom":"ח"}).json()["id"]
+    appointment={"student_id":sid,"starts_at":"2026-10-07T09:00:00+03:00","ends_at":"2026-10-07T10:00:00+03:00"}
+    assert c.post("/api/appointments",headers=other,json=appointment).status_code==404
+    a=c.post("/api/appointments",headers=h,json=appointment).json()
+    assert c.post("/api/appointments",headers=h,json=appointment).status_code==409
+    assert c.get("/api/appointments",headers=other).json()==[]
+    assert c.patch('/api/appointments/'+a['id'],headers=other,json={"status":"cancelled"}).status_code==404
+    assert c.patch('/api/appointments/'+a['id'],headers=h,json={"status":"cancelled"}).status_code==200
+    assert c.post("/api/appointments",headers=h,json=appointment).status_code==201
+    assert c.patch('/api/appointments/'+a['id'],headers=h,json={"status":"planned"}).status_code==409
+    body={"student_id":sid,"title":"מעקב רגיש","due_at":"2026-10-08T09:00:00+03:00"}
+    t=c.post("/api/tasks",headers=h,json=body).json()
+    assert c.get("/api/tasks",headers=other).json()==[]
+    assert c.patch('/api/tasks/'+t['id'],headers=other,json={"status":"done"}).status_code==404
+    assert c.patch('/api/tasks/'+t['id'],headers=h,json={"status":"done"}).json()['status']=='done'
+    from app.models import Task
+    with f() as db: assert 'רגיש' not in db.get(Task,t['id']).title
+    assert c.post("/api/tasks",headers=h,json={**body,"title":"  "}).status_code==422
+    assert c.post("/api/appointments",headers=h,json={**appointment,"ends_at":appointment['starts_at']}).status_code==422

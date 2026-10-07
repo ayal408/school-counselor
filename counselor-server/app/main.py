@@ -95,3 +95,6 @@ def rotate(body: SessionRotate, db: Session = Depends(get_db)):
 @app.post("/internal/sessions/revoke", dependencies=[Depends(internal)])
 def revoke(body: SessionInput, db: Session = Depends(get_db)):
     db.execute(delete(RefreshSession).where(RefreshSession.token_hash == body.token_hash)); db.commit(); return {"ok": True}
+
+from .planning import router as planning_router
+app.include_router(planning_router)
