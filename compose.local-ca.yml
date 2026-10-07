@@ -12,6 +12,12 @@ services:
   nginx-gateway:
     build:
       secrets: [local_ca]
+  email-worker:
+    build:
+      secrets: [local_ca]
+    secrets: [local_ca]
+    environment:
+      LOCAL_CA_BUNDLE: /run/secrets/local_ca
 secrets:
   local_ca:
     file: ${LOCAL_CA_FILE:-./.local/local-ca.pem}

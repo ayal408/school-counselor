@@ -1,0 +1,12 @@
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { dataClient, errorMessage } from './api/http'
+import { useAuth } from './store/auth'
+import { useQueryClient } from '@tanstack/react-query'
+function consumeToken(){return new URLSearchParams(window.location.hash.slice(1)).get('token')||''}
+export function AccountEmail({kind}:{kind:'request'|'reset'|'verify'}){
+ const [token]=useState(consumeToken),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState<unknown>(null),[done,setDone]=useState(false);const qc=useQueryClient()
+ useEffect(()=>{if(window.location.hash)window.history.replaceState(window.history.state,'',window.location.pathname+window.location.search)},[])
+ async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setError(null);const f=new FormData(e.currentTarget);try{const path=kind==='request'?'/account/reset/request':'/account/'+kind+'/complete';const body=kind==='request'?{email:f.get('email')}:kind==='reset'?{token,password:f.get('password')}:{token};const {data}=await dataClient.post(path,body);setMessage(data.message);setDone(true);if(kind==='reset'){useAuth.getState().clear();qc.clear()}if(kind==='verify')qc.invalidateQueries({queryKey:['security']})}catch(err){setError(err)}finally{setBusy(false)}}
+ return <main className="account-email"><section className="card"><span className="eyebrow">◈ מרחב</span><h1>{kind==='request'?'שכחת את הסיסמה?':kind==='reset'?'בחירת סיסמה חדשה':'אימות כתובת המייל'}</h1>{kind!=='request'&&!token?<p className="error">יש לפתוח את הקישור שקיבלת במייל. אם רעננת את העמוד, פתחי שוב את הקישור המקורי.</p>:!done&&<form onSubmit={submit}>{kind==='request'?<><p>נשלח קישור לחשבון מורשה, אם מייל המערכת מחובר.</p><label>כתובת המייל<input name="email" type="email" dir="ltr" required maxLength={254}/></label></>:kind==='reset'?<><p>בחרי סיסמה באורך 12 תווים לפחות. אימות דו־שלבי, אם הופעל, נשאר פעיל.</p><label>סיסמה חדשה<input name="password" type="password" minLength={12} maxLength={256} autoComplete="new-password" required/></label></>:<p>לחצי כדי לאמת את כתובת המייל. הקישור ניתן לשימוש פעם אחת.</p>}{!!error&&<p className="error" role="alert">{errorMessage(error)}</p>}<button disabled={busy}>{busy?'מבצעת…':kind==='request'?'שליחת קישור':kind==='reset'?'שמירת הסיסמה':'אישור כתובת המייל'}</button></form>}{message&&<p className="success" role="status">{message}</p>}<Link to="/">חזרה למרחב ←</Link></section></main>
+}

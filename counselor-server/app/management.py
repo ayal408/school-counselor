@@ -11,6 +11,7 @@ from .database import get_db
 from .models import User, Student, StudentShare, AIConfig, Audit
 from .security import current_user, admin_user, encrypt, decrypt
 from .mfa import authenticate, hasher, revoke_all, totp, recovery_hash, utc
+from .email_service import enqueue, origin, connected
 router=APIRouter(prefix='/api')
 class Proof(BaseModel):
     password:str=Field(min_length=1,max_length=256)
@@ -19,8 +20,8 @@ def prove(db,user,body):return authenticate(db,user,body.password,body.otp)
 def audit(db,user,action,rid):db.add(Audit(user_id=user.id,action=action,record_id=rid))
 def user_json(u):return {'id':u.id,'email':u.email,'name':u.name,'active':u.active,'role':u.role,'mfa_enabled':bool(u.mfa_secret),'session_version':u.session_version}
 @router.get('/settings/security')
-def security(user:User=Depends(current_user)):
-    return {'mfa_enabled':bool(user.mfa_secret),'role':user.role,'recovery_remaining':len(json.loads(user.recovery_hashes)),'last_backup':user.last_backup}
+def security(user:User=Depends(current_user),db:Session=Depends(get_db)):
+    return {'mfa_enabled':bool(user.mfa_secret),'role':user.role,'recovery_remaining':len(json.loads(user.recovery_hashes)),'last_backup':user.last_backup,'email_verified':user.email_verified,'email_connected':connected(db)}
 @router.post('/settings/mfa/setup')
 def setup(body:Proof,user:User=Depends(current_user),db:Session=Depends(get_db)):
     user=prove(db,user,body)
@@ -44,11 +45,12 @@ def confirm(body:Proof,user:User=Depends(current_user),db:Session=Depends(get_db
     user.mfa_secret=user.mfa_pending;user.mfa_pending=None;user.mfa_pending_until=None;user.mfa_last_step=matched
     user.failed_logins=0
     user.recovery_hashes=json.dumps([recovery_hash(user,c) for c in codes]);revoke_all(db,user)
+    enqueue(db,user.email,'account_security','אימות דו־שלבי הופעל במרחב','האימות הדו־שלבי הופעל בחשבונך. כל ההתחברויות הקודמות בוטלו. אם לא ביצעת זאת, פני למנהלת המערכת.',origin()+'/',user_id=user.id)
     audit(db,user,'mfa.enable',user.id);db.commit();return {'recovery_codes':codes,'login_required':True}
 @router.post('/settings/mfa/disable')
 def disable(body:Proof,user:User=Depends(current_user),db:Session=Depends(get_db)):
     user=prove(db,user,body);user.mfa_secret=None;user.mfa_pending=None;user.recovery_hashes='[]';user.mfa_last_step=-1
-    revoke_all(db,user);audit(db,user,'mfa.disable',user.id);db.commit();return {'login_required':True}
+    revoke_all(db,user);enqueue(db,user.email,'account_security','אימות דו־שלבי כובה במרחב','האימות הדו־שלבי כובה בחשבונך. אם לא ביצעת זאת, פני מיד למנהלת המערכת.',origin()+'/',user_id=user.id);audit(db,user,'mfa.disable',user.id);db.commit();return {'login_required':True}
 class NewUser(Proof):
     email:str=Field(min_length=3,max_length=254,pattern=r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
     name:str=Field(min_length=1,max_length=120)
@@ -70,10 +72,15 @@ def users(user:User=Depends(admin_user),db:Session=Depends(get_db)):
 def add_user(body:NewUser,user:User=Depends(admin_user),db:Session=Depends(get_db)):
     user=prove(db,user,body)
     if user.role!="admin":raise HTTPException(403,"נדרשת הרשאת מנהלת")
-    row=User(email=body.email.lower().strip(),name=body.name,role=body.role,password_hash=hasher.hash(body.new_password))
+    row=User(email=body.email.lower().strip(),name=body.name,role=body.role,email_verified=False,password_hash=hasher.hash(body.new_password))
     db.add(row)
     try:db.flush()
     except IntegrityError:db.rollback();raise HTTPException(409,'כתובת המייל כבר קיימת')
+    enqueue(db,row.email,'account_invite','ברוכה הבאה למרחב','נוצר עבורך חשבון מורשה במערכת מרחב. פני למנהלת לקבלת פרטי הגישה. ניתן לבחור סיסמה באמצעות הקישור שיישלח בנפרד אם משלוח המייל מופעל.',origin()+'/',user_id=row.id)
+    if connected(db):
+        from .account_email import queue_token
+        queue_token(db,row,'reset')
+        queue_token(db,row,'verify')
     audit(db,user,'user.create',row.id);db.commit();return user_json(row)
 @router.patch('/admin/users/{uid}')
 def edit_user(uid:str,body:EditUser,user:User=Depends(admin_user),db:Session=Depends(get_db)):
@@ -87,7 +94,7 @@ def edit_user(uid:str,body:EditUser,user:User=Depends(admin_user),db:Session=Dep
     if body.new_password and len(body.new_password)<12:raise HTTPException(422,'נדרשת סיסמה באורך 12 תווים לפחות')
     row.active=body.active;row.role=body.role
     if body.new_password:row.password_hash=hasher.hash(body.new_password)
-    revoke_all(db,row);audit(db,user,'user.update',row.id);db.commit();return user_json(row)
+    revoke_all(db,row);enqueue(db,row.email,'account_security','פרטי החשבון שלך במרחב עודכנו','מנהלת המערכת עדכנה את מצב החשבון, התפקיד או הסיסמה. ההתחברויות הקודמות בוטלו. לפרטים פני למנהלת.',origin()+'/',user_id=row.id);audit(db,user,'user.update',row.id);db.commit();return user_json(row)
 @router.get('/directory')
 def directory(user:User=Depends(current_user),db:Session=Depends(get_db)):
     return [{'id':u.id,'name':u.name,'email':u.email} for u in db.scalars(select(User).where(User.active.is_(True),User.id!=user.id)).all()]
@@ -104,7 +111,9 @@ class ShareInput(Proof):user_id:str
 def share(sid:str,body:ShareInput,user:User=Depends(current_user),db:Session=Depends(get_db)):
     owner(db,user,sid);prove(db,user,body);target=db.get(User,body.user_id)
     if not target or not target.active or target.id==user.id:raise HTTPException(422,'יש לבחור יועצת מורשית אחרת')
-    if not db.get(StudentShare,(sid,target.id)):db.add(StudentShare(student_id=sid,user_id=target.id))
+    if db.get(StudentShare,(sid,target.id)):return {'ok':True}
+    db.add(StudentShare(student_id=sid,user_id=target.id))
+    enqueue(db,target.email,'share','כרטיס שותף איתך במרחב','ניתנה לך הרשאת צפייה בכרטיס תלמידה. הפרטים מופיעים במערכת לאחר כניסה בלבד.',origin()+'/students',user_id=target.id)
     audit(db,user,'share.create',sid);db.commit();return {'ok':True}
 @router.post('/students/{sid}/shares/{uid}/revoke')
 def unshare(sid:str,uid:str,body:Proof,user:User=Depends(current_user),db:Session=Depends(get_db)):

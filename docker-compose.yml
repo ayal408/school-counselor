@@ -17,10 +17,17 @@ services:
   counselor-server:
     build: ./counselor-server
     command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8080 --no-access-log"]
-    environment:
+    environment: &counselor-environment
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?Set INTERNAL_SERVICE_KEY}
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?Set DATA_ENCRYPTION_KEY}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8088}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+      GMAIL_EMAIL: ${GMAIL_EMAIL:-}
+      GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}
+      GMAIL_REDIRECT_URI: ${GMAIL_REDIRECT_URI:-}
       AI_ENABLED: ${AI_ENABLED:-false}
       AI_PROVIDER: ${AI_PROVIDER:-openai}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -35,6 +42,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+  email-worker:
+    build: ./counselor-server
+    command: ["python", "-m", "app.email_worker"]
+    environment: *counselor-environment
+    depends_on: [counselor-server]
+    restart: unless-stopped
   postgres:
     image: postgres:16-alpine
     environment:
@@ -49,3 +62,4 @@ services:
       retries: 10
 volumes:
   postgres-data:
+

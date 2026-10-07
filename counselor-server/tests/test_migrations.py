@@ -18,4 +18,4 @@ def test_upgrade_preserves_existing_records(tmp_path):
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT role,session_version,recovery_hashes FROM users WHERE id='old'").fetchone()==('admin',0,'[]')
         assert db.execute("SELECT name FROM students WHERE id='s'").fetchone()==('encrypted-name',)
-        assert db.execute('SELECT version_num FROM alembic_version').fetchone()==('0004',)
+        assert db.execute('SELECT version_num FROM alembic_version').fetchone()==('0005',)

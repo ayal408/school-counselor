@@ -111,3 +111,8 @@ from .management import router as management_router
 from .backups import router as backups_router
 app.include_router(management_router)
 app.include_router(backups_router)
+
+from .email_api import router as email_router
+from .account_email import router as account_email_router
+app.include_router(email_router)
+app.include_router(account_email_router)

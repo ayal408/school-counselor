@@ -13,6 +13,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120))
     password_hash: Mapped[str] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=True)
     role: Mapped[str] = mapped_column(String(20), default="counselor")
     session_version: Mapped[int] = mapped_column(Integer, default=0)
     mfa_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -88,3 +89,42 @@ class BackupImport(Base):
     __tablename__ = "backup_imports"
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
     digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+class EmailSettings(Base):
+    __tablename__='email_settings'
+    id: Mapped[int] = mapped_column(Integer,primary_key=True,default=1)
+    generation: Mapped[int] = mapped_column(Integer,default=0)
+    sender_email: Mapped[str] = mapped_column(String(254),default='')
+    sender_name: Mapped[str] = mapped_column(String(100),default='מרחב')
+    reply_to: Mapped[str] = mapped_column(String(254),default='')
+    signature: Mapped[str] = mapped_column(Text,default='')
+    refresh_token: Mapped[str | None] = mapped_column(Text,nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean,default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+class EmailConsent(Base):
+    __tablename__='email_consents'
+    state_hash: Mapped[str] = mapped_column(String(64),primary_key=True)
+    generation: Mapped[int] = mapped_column(Integer,default=0)
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    session_version: Mapped[int] = mapped_column(Integer)
+    verifier: Mapped[str] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+class EmailOutbox(Base):
+    __tablename__='email_outbox'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    recipient: Mapped[str] = mapped_column(String(254))
+    user_id: Mapped[str | None] = mapped_column(ForeignKey('users.id'),nullable=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    payload: Mapped[str | None] = mapped_column(Text,nullable=True)
+    status: Mapped[str] = mapped_column(String(20),default='pending')
+    attempts: Mapped[int] = mapped_column(Integer,default=0)
+    failure_code: Mapped[str | None] = mapped_column(String(40),nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    next_attempt: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),nullable=True)
+class AccountEmailToken(Base):
+    __tablename__='account_email_tokens'
+    token_hash: Mapped[str] = mapped_column(String(64),primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id'),index=True)
+    purpose: Mapped[str] = mapped_column(String(20))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

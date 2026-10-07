@@ -5,7 +5,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, InvalidHashError
 from fastapi import HTTPException
 from sqlalchemy import select, delete
-from .models import User, RefreshSession
+from .models import User, RefreshSession, AccountEmailToken, EmailOutbox
 from .security import decrypt
 hasher=PasswordHasher()
 DUMMY_HASH=hasher.hash('timing-equalization-only')
@@ -47,3 +47,6 @@ def authenticate(db, user, password, otp='', reset_failures=True):
 def revoke_all(db,user):
     user.session_version+=1
     db.execute(delete(RefreshSession).where(RefreshSession.user_id==user.id))
+    db.execute(delete(AccountEmailToken).where(AccountEmailToken.user_id==user.id))
+    for row in db.scalars(select(EmailOutbox).where(EmailOutbox.user_id==user.id,EmailOutbox.status=="pending",EmailOutbox.kind.in_(["password_reset","email_verify"]))):
+        row.status="cancelled";row.payload=None
