@@ -130,7 +130,7 @@ def plan_history(sid:str,rid:str,u:User=Depends(current_user),db:Session=Depends
     readable_student(db,u,sid)
     return [record_json(db,r) for r in db.scalars(select(CaseRecord).where(CaseRecord.student_id==sid,CaseRecord.kind=='plan_history')).all() if unpack(r.document).get('plan_id')==rid]
 class Consent(BaseModel):
-    purpose:Literal['recording','transcription','cloud','sharing']
+    purpose:Literal['recording','transcription','cloud','sharing','browser']
     recipient:str=Field(default='',max_length=36)
     granted_at:AwareDatetime
     expires_at:AwareDatetime
@@ -140,7 +140,7 @@ class Consent(BaseModel):
         if self.expires_at<=self.granted_at:raise ValueError('תוקף לא תקין')
         if self.purpose=='cloud' and self.recipient not in ['openai','groq','gemini']:raise ValueError('בחרי ספק')
         if self.purpose=='sharing' and not self.recipient:raise ValueError('בחרי יועצת')
-        if self.purpose in ['recording','transcription'] and self.recipient:raise ValueError('ללא נמען')
+        if self.purpose in ['recording','transcription','browser'] and self.recipient:raise ValueError('ללא נמען')
         return self
 @router.get('/students/{sid}/consents')
 def consents(sid:str,u:User=Depends(current_user),db:Session=Depends(get_db)):
@@ -161,6 +161,17 @@ def revoke_consent(sid:str,rid:str,u:User=Depends(current_user),db:Session=Depen
 @router.post('/students/{sid}/recording-authorize')
 def recording_authorize(sid:str,u:User=Depends(current_user),db:Session=Depends(get_db)):
     writable(db,u,sid);require_consent(db,sid,'recording');audit(db,u,'recording.authorize',sid);db.commit();return {'ok':True}
+@router.post('/students/{sid}/browser-dictation-authorize')
+def browser_authorize(sid:str,u:User=Depends(current_user),db:Session=Depends(get_db)):
+    writable(db,u,sid)
+    for purpose in ['recording','transcription','browser']:require_consent(db,sid,purpose)
+    deadlines=[]
+    for purpose in ['recording','transcription','browser']:
+        dates=db.scalars(select(CaseConsent.expires_at).where(CaseConsent.student_id==sid,CaseConsent.purpose==purpose,CaseConsent.recipient=='',CaseConsent.revoked.is_(False),CaseConsent.granted_at<=now(),CaseConsent.expires_at>now())).all()
+        if not dates:raise HTTPException(403,'ההסכמה פגה. תעדי הסכמה חדשה')
+        deadlines.append(max(utc(d) for d in dates))
+    deadline=min(deadlines)
+    audit(db,u,'dictation.browser',sid);db.commit();return {'ok':True,'valid_until':deadline}
 class DecisionTask(BaseModel):
     expected_version:int=Field(ge=1)
     index:int=Field(ge=0,le=29)

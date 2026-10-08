@@ -9,7 +9,7 @@ type CaseDoc={kind?:string;at?:string;name?:string;notes?:string;title?:string;s
 type Goal={title:string;measure:string;due_at:string;progress:number;note:string}
 type RecordRow={id:string;version:number;at:string;actor:string;document:CaseDoc}
 type Consent={id:string;purpose:string;recipient:string;granted_at:string;expires_at:string;evidence:string;revoked:boolean;active:boolean}
-const labels:Record<string,string>={recording:'הקלטה',transcription:'תמלול',cloud:'עיבוד אצל ספק',sharing:'שיתוף עם יועצת'}
+const labels:Record<string,string>={recording:'הקלטה',transcription:'תמלול',browser:'זיהוי דיבור בדפדפן — עשוי לכלול עיבוד חיצוני',cloud:'עיבוד אצל ספק',sharing:'שיתוף עם יועצת'}
 function Alert({error}:{error:unknown}){return error?<p className="error" role="alert">{errorMessage(error)}</p>:null}
 function Password(){return <div className="form-grid"><label>סיסמתך לאישור הפעולה<input name="password" type="password" autoComplete="current-password" required/></label><label>קוד אימות, אם הופעל<input name="otp" autoComplete="one-time-code" maxLength={64}/></label></div>}
 function values(e:FormEvent<HTMLFormElement>){e.preventDefault();return Object.fromEntries(new FormData(e.currentTarget))}

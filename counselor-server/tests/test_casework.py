@@ -190,3 +190,14 @@ def test_transfer_checks_expired_consent_and_appointment_conflict(setup):
     assert c.post('/api/transfers/'+rid,headers=other,json=proof(action='accept')).status_code==409
     with f() as db:assert db.get(Student,sid).owner_id=='one'
     assert c.post('/api/transfers/'+rid,headers=other,json=proof(action='reject')).status_code==200
+
+def test_browser_dictation_requires_explicit_browser_consent(setup):
+    c,f=setup;sid=student(c);h=token('one');url=f'/api/students/{sid}/browser-dictation-authorize'
+    assert c.post(url,headers=token('two')).status_code==404
+    assert c.post(url,headers=h).status_code==403
+    for purpose in ['recording','transcription']:grant(c,sid,purpose,'')
+    # A provider consent does not authorize browser-managed recognition.
+    grant(c,sid,'cloud','openai');assert c.post(url,headers=h).status_code==403
+    browser=grant(c,sid,'browser','');assert c.post(url,headers=h).status_code==200
+    with f() as db:db.get(CaseConsent,browser).revoked=True;db.commit()
+    assert c.post(url,headers=h).status_code==403
