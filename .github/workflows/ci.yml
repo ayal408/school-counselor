@@ -29,3 +29,13 @@ jobs:
           cache-dependency-path: counselor-client/package-lock.json
       - run: npm ci
       - run: npm run build
+      - run: npm test
+  local-transcription:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r local-transcription/requirements.txt httpx pytest
+      - run: python -m pytest local-transcription/tests -q

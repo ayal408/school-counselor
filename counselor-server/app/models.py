@@ -33,6 +33,7 @@ class Student(Base):
     referral: Mapped[str] = mapped_column(Text)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    school_year: Mapped[str] = mapped_column(String(9), default=lambda: f"{now().year if now().month >= 9 else now().year-1}-{now().year+1 if now().month >= 9 else now().year}")
 class Meeting(Base):
     __tablename__ = "meetings"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -44,6 +45,9 @@ class Meeting(Base):
     consent_recorded: Mapped[bool] = mapped_column(Boolean, default=False)
     ai_reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    document: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 class RefreshSession(Base):
     __tablename__ = "refresh_sessions"
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -128,3 +132,43 @@ class AccountEmailToken(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey('users.id'),index=True)
     purpose: Mapped[str] = mapped_column(String(20))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+class CaseRecord(Base):
+    """Encrypted typed case records. Mutable records use optimistic versions."""
+    __tablename__ = 'case_records'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    student_id: Mapped[str] = mapped_column(ForeignKey('students.id'), index=True)
+    kind: Mapped[str] = mapped_column(String(20), index=True)
+    actor_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    document: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+class MeetingRevision(Base):
+    __tablename__ = 'meeting_revisions'
+    meeting_id: Mapped[str] = mapped_column(ForeignKey('meetings.id'), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey('users.id'), nullable=True)
+    document: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+class CaseConsent(Base):
+    __tablename__ = 'case_consents'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    student_id: Mapped[str] = mapped_column(ForeignKey('students.id'), index=True)
+    purpose: Mapped[str] = mapped_column(String(20))
+    recipient: Mapped[str] = mapped_column(String(36), default='')
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    evidence: Mapped[str] = mapped_column(Text)
+    actor_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+class CaseTransfer(Base):
+    __tablename__ = 'case_transfers'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    student_id: Mapped[str] = mapped_column(ForeignKey('students.id'), index=True)
+    from_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    to_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    status: Mapped[str] = mapped_column(String(20), default='pending')
+    reason: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

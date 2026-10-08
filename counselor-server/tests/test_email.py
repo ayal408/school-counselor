@@ -145,6 +145,8 @@ def test_reminders_deduplicate_and_notifications_exclude_student_content(setup,m
     with f() as db:reminders(db);reminders(db)
     with f() as db:assert len(db.scalars(select(EmailOutbox).where(EmailOutbox.kind=='backup_reminder')).all())==2
     sid=c.post('/api/students',headers=h,json={'name':'שם רגיש','classroom':'ח','referral':'סיכום רגיש'}).json()['id']
+    from test_api import grant
+    grant(c,sid,'sharing','two')
     c.post(f'/api/students/{sid}/shares',headers=h,json=proof(user_id='two'))
     with f() as db:
         row=db.scalar(select(EmailOutbox).where(EmailOutbox.kind=='share'))

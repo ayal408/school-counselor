@@ -24,13 +24,13 @@ async def validation_error(request, exc):
     return JSONResponse(status_code=422, content={"detail": "יש לבדוק את השדות ואת פורמט התאריך"})
 def audit(db, user, action, record): db.add(Audit(user_id=user.id, action=action, record_id=record))
 def owned(db, user, sid):
-    s = db.scalar(select(Student).where(Student.id == sid, Student.owner_id == user.id))
-    if not s: raise HTTPException(404, "התלמידה לא נמצאה")
-    return s
+    from .casework import writable
+    return writable(db,user,sid,True)
 def student_json(s, user=None):
-    return {"id": s.id, "name": decrypt(s.name), "classroom": decrypt(s.classroom), "referral": decrypt(s.referral), "archived": s.archived, "can_edit": user is None or s.owner_id == user.id}
+    return {"id": s.id, "name": decrypt(s.name), "classroom": decrypt(s.classroom), "referral": decrypt(s.referral), "archived": s.archived, "school_year": s.school_year, "can_edit": user is None or s.owner_id == user.id}
 def meeting_json(m):
-    return {"id": m.id, "student_id": m.student_id, "starts_at": m.starts_at, "notes": decrypt(m.notes), "summary": decrypt(m.summary), "ai_assisted": m.ai_assisted, "ai_reviewed": m.ai_reviewed}
+    from .casework import meeting_json as serialize
+    return serialize(m)
 @app.get("/healthz/live")
 def live(): return {"status": "ok"}
 @app.get("/healthz/ready")
@@ -67,7 +67,9 @@ def add_meeting(sid: str, body: MeetingInput, user: User = Depends(current_user)
     s = owned(db, user, sid)
     if s.archived: raise HTTPException(409, "הכרטיס בארכיון")
     m = Meeting(student_id=sid, starts_at=body.starts_at, notes=encrypt(body.notes), summary=encrypt(body.summary), ai_assisted=body.ai_assisted, consent_recorded=body.consent_recorded, ai_reviewed=body.ai_reviewed)
-    db.add(m); db.flush(); audit(db, user, "meeting.create", m.id); db.commit(); return meeting_json(m)
+    from .casework import apply, revision
+    apply(m,body)
+    db.add(m); db.flush(); revision(db,m,user); audit(db, user, "meeting.create", m.id); db.commit(); return meeting_json(m)
 @app.post("/internal/verify-password", dependencies=[Depends(internal)])
 def verify(body: LoginInput, db: Session = Depends(get_db)):
     from .mfa import authenticate
@@ -101,7 +103,7 @@ app.include_router(ai_router)
 
 @app.middleware("http")
 async def limit_ai_memory(request, call_next):
-    if request.url.path.startswith("/api/ai/students/"):
+    if request.url.path.startswith(("/api/ai/students/", "/api/local-transcription/students/")):
         from .ai import processing_slots
         async with processing_slots:
             return await call_next(request)
@@ -116,3 +118,8 @@ from .email_api import router as email_router
 from .account_email import router as account_email_router
 app.include_router(email_router)
 app.include_router(account_email_router)
+
+from .casework import router as casework_router
+from .local_transcription import router as local_router
+app.include_router(casework_router)
+app.include_router(local_router)

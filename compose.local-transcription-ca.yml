@@ -1,0 +1,4 @@
+services:
+  local-transcription:
+    build:
+      secrets: [local_ca]

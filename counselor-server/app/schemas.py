@@ -10,6 +10,17 @@ class StudentInput(BaseModel):
         if not v.strip(): raise ValueError("שדה חובה")
         return v.strip()
 class MeetingInput(BaseModel):
+    template: str = Field(default="followup", pattern=r"^(first|followup|parents)$")
+    topic: str = Field(default="other", pattern=r"^(social|learning|emotional|attendance|family|other)$")
+    subjects: str = Field(default="", max_length=4000)
+    decisions: list[str] = Field(default_factory=list, max_length=30)
+    next_steps: str = Field(default="", max_length=4000)
+    expected_version: int = Field(default=1, ge=1)
+    @field_validator("decisions")
+    @classmethod
+    def decisions_valid(cls, v):
+        if any(len(x)>1000 for x in v): raise ValueError("החלטה אינה תקינה")
+        return [x.strip() for x in v if x.strip()]
     starts_at: datetime
     notes: str = Field(default="", max_length=20000)
     summary: str = Field(default="", max_length=10000)

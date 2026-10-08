@@ -1,4 +1,4 @@
-param([string]$CertificatePath)
+param([string]$CertificatePath, [switch]$LocalTranscription)
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 if (-not (Test-Path '.env')) { throw 'Create .env from .env.example and configure its keys first.' }
@@ -27,7 +27,12 @@ if ($CertificatePath) {
 }
 $env:LOCAL_CA_FILE = $destination
 Write-Host 'Building with the supplied local CA. TLS verification remains enabled.'
-docker compose -f docker-compose.yml -f compose.local-ca.yml up --build -d
+$composeArgs = @('-f', 'docker-compose.yml', '-f', 'compose.local-ca.yml')
+if ($LocalTranscription) {
+    if (-not (Test-Path 'models/whisper/model.bin')) { throw 'Download the local model first. See docs/casework.md.' }
+    $composeArgs += @('-f', 'compose.local-transcription.yml', '-f', 'compose.local-transcription-ca.yml')
+}
+docker compose @composeArgs up --build -d
 if ($LASTEXITCODE -ne 0) { throw 'Docker build/start failed. Check the preceding error.' }
 Write-Host 'App: http://localhost:8088'
 Write-Host 'Create the first user: docker compose exec counselor-server python -m app.create_user'

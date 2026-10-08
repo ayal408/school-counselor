@@ -42,7 +42,8 @@ def model(name,kind):
     if not re.fullmatch(pattern,value): raise HTTPException(503,"שם מודל ה־AI אינו תקין")
     return value
 def allowed(db,user,sid,consent,name):
-    s=db.scalar(select(Student).where(Student.id==sid,Student.owner_id==user.id))
+    from .casework import writable
+    s=writable(db,user,sid)
     if not s: raise HTTPException(404,"התלמידה לא נמצאה")
     if s.archived: raise HTTPException(409,"הכרטיס בארכיון")
     if not consent: raise HTTPException(422,"נדרש תיעוד הסכמה לעיבוד ב־AI")
@@ -95,6 +96,9 @@ def status(user: User=Depends(current_user)):
 async def transcribe(sid:str, request:Request, x_recording_consent:str=Header(default=""), x_ai_provider:str=Header(default=""), user:User=Depends(current_user),db:Session=Depends(get_db)):
     chosen=selected_provider(x_ai_provider)
     allowed(db,user,sid,x_recording_consent=="true",chosen)
+    from .casework import require_consent
+    for purpose in ["recording","transcription"]:require_consent(db,sid,purpose)
+    require_consent(db,sid,"cloud",chosen)
     limit=min(MAX_AUDIO,PROVIDERS[chosen]["max_audio_mb"]*1024*1024)
     mime=request.headers.get("content-type","").split(";")[0].lower()
     if mime not in FORMATS: raise HTTPException(415,"פורמט ההקלטה אינו נתמך")
@@ -120,6 +124,8 @@ class SummaryInput(BaseModel):
 async def summarize(sid:str,body:SummaryInput,user:User=Depends(current_user),db:Session=Depends(get_db)):
     chosen=selected_provider(body.provider)
     allowed(db,user,sid,body.consent,chosen)
+    from .casework import require_consent
+    require_consent(db,sid,"cloud",chosen)
     if not body.transcript.strip(): raise HTTPException(422,"יש להזין תמלול")
     db.add(Audit(user_id=user.id,action="ai.summary.consent."+chosen,record_id=sid));db.commit()
     data=await provider("chat/completions",provider_name=chosen,json={"model":model(chosen,"summary"),"store":False,"messages":[{"role":"system","content":PROMPT},{"role":"user","content":body.transcript}]})

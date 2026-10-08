@@ -29,8 +29,8 @@ def admin_user(user: User = Depends(current_user)):
 
 def visible_condition(user):
     from sqlalchemy import or_, select
-    from .models import Student, StudentShare
-    return or_(Student.owner_id == user.id, Student.id.in_(select(StudentShare.student_id).where(StudentShare.user_id == user.id)))
+    from .models import Student, StudentShare, CaseConsent, now
+    return or_(Student.owner_id == user.id, Student.id.in_(select(StudentShare.student_id).join(CaseConsent, CaseConsent.student_id == StudentShare.student_id).where(StudentShare.user_id == user.id, CaseConsent.purpose == "sharing", CaseConsent.recipient == user.id, CaseConsent.revoked.is_(False), CaseConsent.granted_at <= now(), CaseConsent.expires_at > now())))
 
 def readable_student(db, user, sid):
     from sqlalchemy import select

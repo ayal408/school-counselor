@@ -99,9 +99,8 @@ def edit_user(uid:str,body:EditUser,user:User=Depends(admin_user),db:Session=Dep
 def directory(user:User=Depends(current_user),db:Session=Depends(get_db)):
     return [{'id':u.id,'name':u.name,'email':u.email} for u in db.scalars(select(User).where(User.active.is_(True),User.id!=user.id)).all()]
 def owner(db,user,sid):
-    row=db.scalar(select(Student).where(Student.id==sid,Student.owner_id==user.id).with_for_update())
-    if not row:raise HTTPException(404,'הכרטיס אינו בבעלותך')
-    return row
+    from .casework import writable
+    return writable(db,user,sid,True)
 @router.get('/students/{sid}/shares')
 def shares(sid:str,user:User=Depends(current_user),db:Session=Depends(get_db)):
     owner(db,user,sid)
@@ -109,15 +108,17 @@ def shares(sid:str,user:User=Depends(current_user),db:Session=Depends(get_db)):
 class ShareInput(Proof):user_id:str
 @router.post('/students/{sid}/shares')
 def share(sid:str,body:ShareInput,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    owner(db,user,sid);prove(db,user,body);target=db.get(User,body.user_id)
+    prove(db,user,body);owner(db,user,sid);target=db.get(User,body.user_id)
     if not target or not target.active or target.id==user.id:raise HTTPException(422,'יש לבחור יועצת מורשית אחרת')
+    from .casework import require_consent
+    require_consent(db,sid,"sharing",target.id)
     if db.get(StudentShare,(sid,target.id)):return {'ok':True}
     db.add(StudentShare(student_id=sid,user_id=target.id))
     enqueue(db,target.email,'share','כרטיס שותף איתך במרחב','ניתנה לך הרשאת צפייה בכרטיס תלמידה. הפרטים מופיעים במערכת לאחר כניסה בלבד.',origin()+'/students',user_id=target.id)
     audit(db,user,'share.create',sid);db.commit();return {'ok':True}
 @router.post('/students/{sid}/shares/{uid}/revoke')
 def unshare(sid:str,uid:str,body:Proof,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    owner(db,user,sid);prove(db,user,body);row=db.get(StudentShare,(sid,uid))
+    prove(db,user,body);owner(db,user,sid);row=db.get(StudentShare,(sid,uid))
     if row:db.delete(row)
     audit(db,user,'share.revoke',sid);db.commit();return {'ok':True}
 class AIInput(Proof):

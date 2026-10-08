@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "node scripts/check-datepicker.mjs && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "postinstall": "node scripts/fix-datepicker.mjs"
+    "postinstall": "node scripts/fix-datepicker.mjs",
+    "test": "vitest run --environment jsdom"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
@@ -19,10 +20,13 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@testing-library/react": "16.3.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.4.1",
+    "jsdom": "26.1.0",
     "typescript": "^5.7.2",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "3.2.4"
   }
 }

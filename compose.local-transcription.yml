@@ -1,0 +1,24 @@
+services:
+  counselor-server:
+    networks: [default, transcription]
+    environment:
+      LOCAL_TRANSCRIPTION_URL: http://local-transcription:8090
+  local-transcription:
+    build: ./local-transcription
+    environment:
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?Set INTERNAL_SERVICE_KEY}
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+    volumes:
+      - ./models/whisper:/models/whisper:ro
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 3g
+    cpus: 4
+    restart: unless-stopped
+    networks: [transcription]
+networks:
+  transcription:
+    internal: true

@@ -30,6 +30,11 @@ def setup():
 def token(uid):
     now = datetime.now(timezone.utc)
     return {"Authorization": "Bearer " + jwt.encode({"sub": uid, "iat": now, "exp": now+timedelta(minutes=5), "iss": "counselor-auth", "aud": "counselor-api"}, os.environ["JWT_SECRET"], algorithm="HS256")}
+def grant(c,sid,purpose='cloud',recipient='openai',headers=None):
+    start=datetime.now(timezone.utc)-timedelta(days=1)
+    response=c.post(f'/api/students/{sid}/consents',headers=headers or token('one'),json={'purpose':purpose,'recipient':recipient,'granted_at':start.isoformat(),'expires_at':(start+timedelta(days=365)).isoformat(),'evidence':'אישור בדיקה סינתטי'})
+    assert response.status_code==201,response.text
+    return response.json()['id']
 def test_auth_required(setup):
     c,_=setup
     assert c.get("/api/students").status_code == 401
@@ -109,6 +114,8 @@ def test_ai_consent_authorization_and_review(setup, monkeypatch):
     assert c.post(f'/api/ai/students/{sid}/summarize',headers=other,json={"transcript":"בדיקה","consent":True}).status_code==404
     assert c.post(f'/api/ai/students/{sid}/summarize',headers=h,json={"transcript":"בדיקה"}).status_code==422
     assert calls==[]
+    for purpose in ['recording','transcription']:grant(c,sid,purpose,'')
+    grant(c,sid)
     audio_headers={**h,'Content-Type':'audio/webm','X-Recording-Consent':'true'}
     assert c.post(f'/api/ai/students/{sid}/transcribe',headers=audio_headers,content=b'invalid').status_code==415
     result=c.post(f'/api/ai/students/{sid}/transcribe',headers=audio_headers,content=b'\x1a\x45\xdf\xa3fake-test-audio')
@@ -159,6 +166,8 @@ def test_multiple_providers_routing_and_secrets(setup,monkeypatch):
         return httpx.Response(200,json={'choices':[{'message':{'content':'סיכום Groq'}}]})
     original=httpx.AsyncClient
     monkeypatch.setattr(ai.httpx,'AsyncClient',lambda **kw:original(transport=httpx.MockTransport(handler)))
+    for purpose in ['recording','transcription']:grant(c,sid,purpose,'')
+    for provider in ['gemini','groq']:grant(c,sid,'cloud',provider)
     header={**h,'Content-Type':'audio/webm','X-Recording-Consent':'true','X-AI-Provider':'gemini'}
     a=c.post(f'/api/ai/students/{sid}/transcribe',headers=header,content=b'\x1a\x45\xdf\xa3sample')
     assert a.status_code==200 and a.json()['transcript']=='תוצר בדיקה'
@@ -199,6 +208,7 @@ def test_read_only_share_and_revocation(setup):
     sid=c.post('/api/students',headers=h,json={'name':'משותפת','classroom':'ח'}).json()['id']
     c.post(f'/api/students/{sid}/meetings',headers=h,json={'starts_at':'2026-10-07T09:00:00Z','notes':'תיעוד'})
     c.post('/api/tasks',headers=h,json={'student_id':sid,'title':'מעקב','due_at':'2026-10-08T09:00:00Z'})
+    grant(c,sid,'sharing','two')
     assert c.post(f'/api/students/{sid}/shares',headers=h,json=proof(user_id='two')).status_code==200
     assert c.get('/api/students',headers=other).json()[0]['can_edit'] is False
     assert c.get(f'/api/students/{sid}/meetings',headers=other).json()[0]['notes']=='תיעוד'
@@ -254,6 +264,7 @@ def test_personal_ai_encryption_isolation_and_runtime(setup,monkeypatch):
     assert c.get('/api/ai/status',headers=h).json()['enabled'] is True
     assert c.get('/api/ai/status',headers=other).json()['enabled'] is False
     sid=c.post('/api/students',headers=h,json={'name':'בדיקה','classroom':'ח'}).json()['id']
+    grant(c,sid)
     async def fake(path,**kwargs):
         assert ai.ai_runtime.get()['openai']['key']=='private-personal-key'
         return {'choices':[{'message':{'content':'סיכום'}}]}

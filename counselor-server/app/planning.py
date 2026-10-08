@@ -40,12 +40,13 @@ class TaskInput(BaseModel):
 class TaskStatus(BaseModel):
     status: Literal["open", "done"]
 def student(db, user, sid):
-    row = db.scalar(select(Student).where(Student.id == sid, Student.owner_id == user.id))
-    if not row: raise HTTPException(404, "התלמידה לא נמצאה")
-    return row
+    from .casework import writable
+    return writable(db,user,sid)
 def owned_record(db, user, model, rid):
+    db.scalar(select(User).where(User.id == user.id).with_for_update())
     row = db.scalar(select(model).join(Student, model.student_id == Student.id).where(model.id == rid, Student.owner_id == user.id))
     if not row: raise HTTPException(404, "הרשומה לא נמצאה")
+    student(db,user,row.student_id)
     return row
 def audit(db, user, action, rid): db.add(Audit(user_id=user.id, action=action, record_id=rid))
 def appointment_json(a):

@@ -242,3 +242,7 @@ docker compose logs --tail 50 email-worker
 הבדיקות משתמשות ב־Gmail מדומה בלבד: הרשאות מנהלת, PKCE, cookie ומצב חד־פעמי, הצפנת טוקן, דחיית חיבור שהתיישן, MIME ועיצוב RTL, escaping, מניעת הזרקת כותרות, אי־שליחה חוזרת במצב לא ודאי, ניתוק fallback, קישורים חד־פעמיים ופגי תוקף, שמירת MFA, ביטול קישורים ישנים ותזכורות ללא פרטי תלמידות. חיבור ושליחה אמיתיים מחייבים הגדרת Google והרשאת החשבון שלך.
 
 [Google OAuth Web Server](https://developers.google.com/identity/protocols/oauth2/web-server) · [Gmail API — Sending](https://developers.google.com/workspace/gmail/api/guides/sending)
+
+## כלי ליווי, גרסאות ותמלול מקומי
+
+תיעוד מובנה וטיוטות מוצפנות, היסטוריית פגישות, קשרי הורים וצוות, הסכמות, תוכניות ליווי, חיפוש, דוחות ומעבר שנה. ראו [מדריך ההפעלה](docs/casework.md), כולל התקנת תמלול מקומי אופציונלי.
