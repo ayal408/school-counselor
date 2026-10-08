@@ -1,6 +1,6 @@
 """Encrypted casework, immutable revisions, scoped search and safe aggregate reports."""
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, AwareDatetime, model_validator, ValidationError
@@ -294,3 +294,9 @@ def printable_meeting(sid:str,mid:str,u:User=Depends(current_user),db:Session=De
     if not m:raise HTTPException(404,'הפגישה לא נמצאה')
     audit(db,u,'meeting.print',mid);db.commit()
     return {'student':{'name':decrypt(s.name),'classroom':decrypt(s.classroom),'school_year':s.school_year},'meeting':meeting_json(m)}
+
+@router.get('/consent-reminders')
+def consent_reminders(u:User=Depends(current_user),db:Session=Depends(get_db)):
+    instant=now()
+    rows=db.scalars(select(CaseConsent).join(Student).where(Student.owner_id==u.id,Student.archived.is_(False),CaseConsent.revoked.is_(False),CaseConsent.granted_at<=instant,CaseConsent.expires_at>instant,CaseConsent.expires_at<=instant+timedelta(days=14)).order_by(CaseConsent.expires_at)).all()
+    return [{'id':r.id,'student_id':r.student_id,'purpose':r.purpose,'expires_at':r.expires_at} for r in rows]
