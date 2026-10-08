@@ -279,3 +279,18 @@ def rollover(b:Rollover,u:User=Depends(current_user),db:Session=Depends(get_db))
         else:s.classroom=encrypt(item.classroom.strip());s.school_year=b.target_year
         db.add(CaseRecord(student_id=s.id,kind='year_history',actor_id=u.id,document=pack({'before':old,'target_year':b.target_year,'graduate':item.graduate})));audit(db,u,'year.rollover',s.id)
     db.commit();return {'updated':len(b.rows)}
+
+@router.post('/students/{sid}/restore')
+def restore_student(sid:str,u:User=Depends(current_user),db:Session=Depends(get_db)):
+    s=writable(db,u,sid,True)
+    if not s.archived:raise HTTPException(409,'הכרטיס כבר פעיל')
+    s.archived=False;audit(db,u,'student.restore',sid);db.commit()
+    from .main import student_json
+    return student_json(s,u)
+@router.get('/students/{sid}/meetings/{mid}/print')
+def printable_meeting(sid:str,mid:str,u:User=Depends(current_user),db:Session=Depends(get_db)):
+    s=readable_student(db,u,sid)
+    m=db.scalar(select(Meeting).where(Meeting.id==mid,Meeting.student_id==sid))
+    if not m:raise HTTPException(404,'הפגישה לא נמצאה')
+    audit(db,u,'meeting.print',mid);db.commit()
+    return {'student':{'name':decrypt(s.name),'classroom':decrypt(s.classroom),'school_year':s.school_year},'meeting':meeting_json(m)}

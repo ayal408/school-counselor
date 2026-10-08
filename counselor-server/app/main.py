@@ -8,7 +8,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, InvalidHashError
 from .database import get_db
 from .models import User, Student, Meeting, RefreshSession, Audit
-from .schemas import StudentInput, MeetingInput, LoginInput, SessionCreate, SessionInput, SessionRotate
+from .schemas import StudentInput, StudentEdit, MeetingInput, LoginInput, SessionCreate, SessionInput, SessionRotate
 from .security import internal, current_user, encrypt, decrypt, visible_condition, readable_student
 app = FastAPI(title="School Counselor Data API", docs_url=None, redoc_url=None)
 hasher = PasswordHasher()
@@ -49,8 +49,10 @@ def create_student(body: StudentInput, user: User = Depends(current_user), db: S
     s = Student(owner_id=user.id, name=encrypt(body.name), classroom=encrypt(body.classroom), referral=encrypt(body.referral))
     db.add(s); db.flush(); audit(db, user, "student.create", s.id); db.commit(); return student_json(s)
 @app.put("/api/students/{sid}")
-def update_student(sid: str, body: StudentInput, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def update_student(sid: str, body: StudentEdit, user: User = Depends(current_user), db: Session = Depends(get_db)):
     s = owned(db, user, sid)
+    if body.expected and (decrypt(s.name),decrypt(s.classroom),decrypt(s.referral)) != (body.expected.name,body.expected.classroom,body.expected.referral):
+        raise HTTPException(409,"פרטי הכרטיס השתנו. רענני לפני שמירה")
     s.name, s.classroom, s.referral = encrypt(body.name), encrypt(body.classroom), encrypt(body.referral)
     audit(db, user, "student.update", s.id); db.commit(); return student_json(s)
 @app.post("/api/students/{sid}/archive")

@@ -9,3 +9,15 @@
 .workspace{margin:2rem 0}.tabs{display:flex;gap:.6rem;flex-wrap:wrap;margin:1.25rem 0}.tabs button{width:auto}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.contact-row,.goal{border-top:1px solid var(--border,#d9e7e2);padding:1.25rem 0}.goal progress{width:100%;height:12px;accent-color:#367b65}.meeting-editor{border:2px solid #94bbaa}.meeting details{padding:1rem;border-radius:12px;background:#f3f8f5;margin:.6rem 0}.meeting summary{cursor:pointer;font-weight:600}.table-scroll{overflow-x:auto}.metric{display:flex;flex-direction:column;padding:1.5rem;background:#eff6f2;border-radius:16px}.metric strong{font-size:2rem;color:#235f4c}audio{width:100%;margin:1rem 0}.recorder-panel{padding:1.4rem;background:#f1f6f3;border-radius:16px;margin:1rem 0}.muted{color:#667a70}table{width:100%;border-collapse:collapse}th,td{padding:.8rem;text-align:right;border-bottom:1px solid #d9e7e2}@media(max-width:700px){.form-grid{grid-template-columns:1fr}.tabs{gap:.4rem}.tabs button{font-size:.85rem}.table-scroll input{min-width:70px}}
 
 .editor-fields{border:0;padding:0;margin:0;min-width:0}
+
+.print-view{max-width:850px;margin:1.5rem auto}.print-view li{padding:.3rem 0}.print-view .pre{overflow-wrap:anywhere}.print-link{padding:.7rem;border-radius:10px;background:#f1f6f3}
+@media print{
+ @page{size:A4;margin:18mm}
+ .shell aside,.no-print,.content>footer{display:none!important}
+ body,.shell,.content{display:block!important;background:white!important;color:black!important;margin:0!important;padding:0!important;min-height:0!important}
+ .print-view{max-width:none;margin:0;border:0;box-shadow:none;padding:0}
+ .print-view header,.print-view h2,.print-view footer{break-inside:avoid}.print-view h2{break-after:avoid}
+ .print-view p,.print-view li{orphans:3;widows:3}.print-view .pre{white-space:pre-wrap}
+}
+
+.task-summary{display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0}.task-summary button{flex:1;min-width:120px}.task-summary strong{font-size:1.4rem;margin-inline-end:.4rem}.task-editor{margin-top:1rem;padding:1rem;background:#f3f8f5;border-radius:12px}

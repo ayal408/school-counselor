@@ -90,3 +90,28 @@ def create_task(body: TaskInput, user: User = Depends(current_user), db: Session
 def change_task(rid: str, body: TaskStatus, user: User = Depends(current_user), db: Session = Depends(get_db)):
     row=owned_record(db,user,Task,rid);row.status=body.status
     audit(db,user,"task.status",rid);db.commit();return task_json(row)
+
+class TaskValues(BaseModel):
+    title: str = Field(min_length=1, max_length=2000)
+    due_at: datetime
+    status: Literal['open','done']
+    @field_validator('title')
+    @classmethod
+    def nonblank(cls,value):
+        if not value.strip():raise ValueError('שדה חובה')
+        return value.strip()
+    @field_validator('due_at')
+    @classmethod
+    def aware(cls,value):
+        if value.tzinfo is None:raise ValueError('נדרש אזור זמן')
+        return value
+class TaskEdit(TaskValues):
+    expected: TaskValues
+@router.put('/tasks/{rid}')
+def edit_task(rid:str,body:TaskEdit,user:User=Depends(current_user),db:Session=Depends(get_db)):
+    from .mfa import utc
+    row=owned_record(db,user,Task,rid)
+    if (decrypt(row.title),utc(row.due_at),row.status)!=(body.expected.title,body.expected.due_at,body.expected.status):
+        raise HTTPException(409,'המשימה השתנתה בחלון אחר. רענני את הרשימה לפני עריכה')
+    row.title=encrypt(body.title);row.due_at=body.due_at;row.status=body.status
+    audit(db,user,'task.update',rid);db.commit();return task_json(row)

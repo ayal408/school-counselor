@@ -50,3 +50,6 @@ class SessionCreate(SessionInput):
 class SessionRotate(SessionInput):
     new_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     expires_at: datetime
+
+class StudentEdit(StudentInput):
+    expected: StudentInput | None = None
